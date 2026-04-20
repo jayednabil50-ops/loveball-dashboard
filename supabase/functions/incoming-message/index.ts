@@ -192,8 +192,10 @@ Deno.serve(async (req) => {
       else messageType = 'text'
     }
 
-    // Find or create conversation
+    // Find or create conversation (insert first with neutral preview, then update after message insert)
     let conversationId: string
+    let baseUnreadCount = 0
+    const nowIso = new Date().toISOString()
 
     const { data: existingConvo } = await supabase
       .from('conversations')
@@ -203,55 +205,93 @@ Deno.serve(async (req) => {
 
     if (existingConvo) {
       conversationId = existingConvo.id
-      const nextUnreadCount = isFromBot
-        ? (existingConvo.unread_count ?? 0)
-        : (existingConvo.unread_count ?? 0) + 1
-      await supabase
-        .from('conversations')
-        .update({
-          last_message: messageText,
-          last_message_time: new Date().toISOString(),
-          unread_count: nextUnreadCount,
-          contact_name: contactName,
-        })
-        .eq('id', conversationId)
+      baseUnreadCount = existingConvo.unread_count ?? 0
     } else {
       const { data: newConvo, error: convoError } = await supabase
         .from('conversations')
         .insert({
           facebook_id: facebookId,
           contact_name: contactName,
-          last_message: messageText,
-          last_message_time: new Date().toISOString(),
-          unread_count: 1,
+          last_message: '',
+          last_message_time: nowIso,
+          unread_count: 0,
+        })
+        .select('id, unread_count')
+        .single()
+
+      if (convoError) {
+        // Handle race on unique facebook_id
+        const { data: racedConvo, error: raceReadError } = await supabase
+          .from('conversations')
+          .select('id, unread_count')
+          .eq('facebook_id', facebookId)
+          .single()
+        if (raceReadError) throw convoError
+        conversationId = racedConvo.id
+        baseUnreadCount = racedConvo.unread_count ?? 0
+      } else {
+        conversationId = newConvo.id
+        baseUnreadCount = newConvo.unread_count ?? 0
+      }
+    }
+
+    // Retry-safe dedupe: if same sender+content was just inserted very recently, reuse it.
+    const expectedSender = isFromBot ? 'ai' : 'contact'
+    const { data: recentDuplicate } = await supabase
+      .from('messages')
+      .select('id, created_at')
+      .eq('conversation_id', conversationId)
+      .eq('sender', expectedSender)
+      .eq('content', messageText)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    let msgData: { id: string } | null = null
+
+    if (recentDuplicate) {
+      const duplicateAgeMs = Date.now() - new Date(recentDuplicate.created_at).getTime()
+      if (duplicateAgeMs <= 8000) {
+        msgData = { id: recentDuplicate.id }
+      }
+    }
+
+    if (!msgData) {
+      const { data: insertedMsg, error: msgError } = await supabase
+        .from('messages')
+        .insert({
+          conversation_id: conversationId,
+          facebook_id: facebookId,
+          contact_name: contactName,
+          content: messageText,
+          sender: expectedSender,
+          attachment_type: attachmentType,
+          attachment_url: attachmentUrl,
+          is_carousel: isCarousel,
+          is_from_bot: isFromBot,
+          template_elements: templateElements,
+          message_type: messageType,
         })
         .select('id')
         .single()
 
-      if (convoError) throw convoError
-      conversationId = newConvo.id
+      if (msgError) throw msgError
+      msgData = insertedMsg
     }
 
-    // Insert message with new fields
-    const { data: msgData, error: msgError } = await supabase
-      .from('messages')
-      .insert({
-        conversation_id: conversationId,
-        facebook_id: facebookId,
-        contact_name: contactName,
-        content: messageText,
-        sender: isFromBot ? 'ai' : 'contact',
-        attachment_type: attachmentType,
-        attachment_url: attachmentUrl,
-        is_carousel: isCarousel,
-        is_from_bot: isFromBot,
-        template_elements: templateElements,
-        message_type: messageType,
-      })
-      .select()
-      .single()
+    const nextUnreadCount = isFromBot ? baseUnreadCount : baseUnreadCount + 1
 
-    if (msgError) throw msgError
+    const { error: convoUpdateError } = await supabase
+      .from('conversations')
+      .update({
+        last_message: messageText,
+        last_message_time: nowIso,
+        unread_count: nextUnreadCount,
+        contact_name: contactName,
+      })
+      .eq('id', conversationId)
+
+    if (convoUpdateError) throw convoUpdateError
 
     return new Response(JSON.stringify({
       success: true,
