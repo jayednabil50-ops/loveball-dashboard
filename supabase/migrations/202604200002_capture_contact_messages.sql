@@ -27,7 +27,9 @@ begin
   end if;
 
   -- Media placeholders are inserted via dedicated message paths.
-  if v_last_message in ('📷 Image', '🎤 Voice message', 'Voice message', '🖼️ Carousel') then
+  if lower(v_last_message) like '%image%'
+     or lower(v_last_message) like '%voice message%'
+     or lower(v_last_message) like '%carousel%' then
     return new;
   end if;
 
