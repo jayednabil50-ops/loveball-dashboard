@@ -60,7 +60,7 @@ export interface Order {
   items: { name: string; quantity?: number; unitPrice?: number }[];
   amount: number;
   deliveryFee?: number;
-  status: 'Delivered' | 'Confirmed' | 'Pending' | 'Cancelled';
+  status: 'Pending' | 'Completed' | 'HandedToDeliveryMan' | 'Delivered' | 'Confirmed' | 'Cancelled';
   productLink?: string;
   sku?: string;
   productSize?: string;

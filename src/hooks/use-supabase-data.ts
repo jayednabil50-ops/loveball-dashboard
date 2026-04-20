@@ -33,18 +33,23 @@ export function useConversations() {
 }
 
 function mapMessageRow(row: any): Message {
+  const isFromBot = row.is_from_bot || false;
+  const rawSender = row.sender as 'user' | 'contact' | 'ai';
+  const normalizedSender: Message['sender'] =
+    rawSender === 'user' && !isFromBot && !!row.facebook_id ? 'contact' : rawSender;
+
   return {
     id: row.id,
     conversationId: row.conversation_id,
     facebookId: row.facebook_id || undefined,
     contactName: row.contact_name || undefined,
     content: row.content || '',
-    sender: row.sender as 'user' | 'contact' | 'ai',
+    sender: normalizedSender,
     timestamp: row.created_at,
     attachmentUrl: row.attachment_url,
     attachmentType: row.attachment_type,
     isCarousel: row.is_carousel || false,
-    isFromBot: row.is_from_bot || false,
+    isFromBot,
     templateElements: row.template_elements || null,
     messageType: row.message_type || 'text',
   };
@@ -162,7 +167,9 @@ export function useSendImageMessage() {
         .insert({
           conversation_id: conversationId,
           content: previewText,
-          sender: 'user',
+          sender: 'ai',
+          is_from_bot: true,
+          message_type: 'image',
           attachment_url: publicUrl,
           attachment_type: 'image',
         })
@@ -215,7 +222,9 @@ export function useSendFileMessage() {
         .insert({
           conversation_id: conversationId,
           content: file.name,
-          sender: 'user',
+          sender: 'ai',
+          is_from_bot: true,
+          message_type: 'file',
           attachment_url: publicUrl,
           attachment_type: 'file',
         })
@@ -268,7 +277,9 @@ export function useSendVoiceMessage() {
         .insert({
           conversation_id: conversationId,
           content: previewText,
-          sender: 'user',
+          sender: 'ai',
+          is_from_bot: true,
+          message_type: 'audio',
           attachment_url: publicUrl,
           attachment_type: 'audio',
         })
@@ -305,7 +316,13 @@ export function useSendMessage() {
     mutationFn: async ({ conversationId, content }: { conversationId: string; content: string }) => {
       const { data, error } = await supabase
         .from('messages')
-        .insert({ conversation_id: conversationId, content, sender: 'user' })
+        .insert({
+          conversation_id: conversationId,
+          content,
+          sender: 'ai',
+          is_from_bot: true,
+          message_type: 'text',
+        })
         .select()
         .single();
       if (error) throw error;
@@ -334,12 +351,60 @@ export function useSendMessage() {
 }
 
 // ---- Orders ----
+const ORDER_STATUS_OPTIONS = ['Pending', 'Completed', 'HandedToDeliveryMan'] as const;
+type OrderStatusOverride = typeof ORDER_STATUS_OPTIONS[number];
+
+function normalizeOrderStatus(raw: string | null | undefined): Order['status'] {
+  const s = (raw || '').trim().toLowerCase();
+  if (!s) return 'Pending';
+  if (s === 'completed' || s === 'complete' || s === 'delivered' || s === 'done') return 'Completed';
+  if (
+    s === 'handedtodeliveryman' ||
+    s.includes('deliveryman') ||
+    s.includes('delivery man') ||
+    s.includes('courier')
+  ) {
+    return 'HandedToDeliveryMan';
+  }
+  if (s === 'pending') return 'Pending';
+  if (s === 'confirmed') return 'Pending';
+  if (s === 'cancelled' || s === 'canceled') return 'Cancelled';
+  return 'Pending';
+}
+
+async function fetchOrderStatusOverrides(): Promise<Map<string, Order['status']>> {
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'order_status_overrides')
+    .maybeSingle();
+
+  if (error) {
+    console.warn('Order status override fetch failed from app_settings:', error.message);
+    return new Map<string, Order['status']>();
+  }
+
+  const raw = (data?.value && typeof data.value === 'object') ? data.value as Record<string, string> : {};
+  const map = new Map<string, Order['status']>();
+  Object.entries(raw).forEach(([orderId, status]) => {
+    map.set(orderId, normalizeOrderStatus(status));
+  });
+  return map;
+}
+
 async function fetchOrdersFromDataSource(): Promise<Order[]> {
+  const overrides = await fetchOrderStatusOverrides();
+
   // Primary source: Google Sheet (n8n order flow writes here)
   try {
     const { fetchGoogleSheetOrders } = await import('@/lib/google-sheet');
     const sheetOrders = await fetchGoogleSheetOrders();
-    if (sheetOrders.length > 0) return sheetOrders;
+    if (sheetOrders.length > 0) {
+      return sheetOrders.map(order => ({
+        ...order,
+        status: overrides.get(order.id) || normalizeOrderStatus(order.status),
+      }));
+    }
   } catch (sheetError) {
     console.warn('Google Sheet order fetch failed, falling back to Supabase orders table:', sheetError);
   }
@@ -364,7 +429,7 @@ async function fetchOrdersFromDataSource(): Promise<Order[]> {
       : [{ name: row.product_name || 'Unknown Product', quantity: row.quantity || 1, unitPrice: Number(row.unit_price) || 0 }],
     amount: Number(row.amount) || 0,
     deliveryFee: row.delivery_fee != null ? Number(row.delivery_fee) : undefined,
-    status: (row.status || 'Pending') as Order['status'],
+    status: overrides.get(row.order_id || row.id) || normalizeOrderStatus(row.status),
     productLink: row.product_link || undefined,
     sku: row.sku || '',
     productSize: row.product_size || '',
@@ -377,6 +442,45 @@ export function useOrders() {
     refetchInterval: 10000,
     refetchOnWindowFocus: true,
     queryFn: fetchOrdersFromDataSource,
+  });
+}
+
+export function useUpdateOrderStatus() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ orderId, status }: { orderId: string; status: OrderStatusOverride }) => {
+      const { data: existing, error: fetchError } = await supabase
+        .from('app_settings')
+        .select('value')
+        .eq('key', 'order_status_overrides')
+        .maybeSingle();
+      if (fetchError) throw fetchError;
+
+      const current = (existing?.value && typeof existing.value === 'object')
+        ? { ...(existing.value as Record<string, string>) }
+        : {};
+      current[orderId] = status;
+
+      if (existing) {
+        const { error } = await supabase
+          .from('app_settings')
+          .update({ value: current })
+          .eq('key', 'order_status_overrides');
+        if (error) throw error;
+        return;
+      }
+
+      const { error } = await supabase
+        .from('app_settings')
+        .insert({
+          key: 'order_status_overrides',
+          value: current,
+        });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+    },
   });
 }
 // ---- Error Logs ----
@@ -797,11 +901,13 @@ export function useOrderStatusDistribution() {
     queryKey: ['order_status_dist'],
     queryFn: async () => {
       const orders = await fetchOrdersFromDataSource();
-      const counts: Record<string, number> = { Pending: 0, Confirmed: 0, Delivered: 0, Cancelled: 0 };
+      const counts: Record<string, number> = { Pending: 0, Completed: 0, HandedToDeliveryMan: 0, Cancelled: 0 };
       orders.forEach(o => { counts[o.status] = (counts[o.status] || 0) + 1; });
       const colorMap: Record<string, string> = {
-        Pending: 'hsl(38, 92%, 50%)', Confirmed: 'hsl(217, 91%, 50%)',
-        Delivered: 'hsl(160, 84%, 32%)', Cancelled: 'hsl(0, 84%, 60%)',
+        Pending: 'hsl(38, 92%, 50%)',
+        Completed: 'hsl(160, 84%, 32%)',
+        HandedToDeliveryMan: 'hsl(217, 91%, 50%)',
+        Cancelled: 'hsl(0, 84%, 60%)',
       };
       return Object.entries(counts).map(([name, value]) => ({ name, value, color: colorMap[name] }));
     },

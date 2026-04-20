@@ -51,15 +51,13 @@ function parseCSVLine(line: string): string[] {
       } else {
         current += ch;
       }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      result.push(current.trim());
+      current = '';
     } else {
-      if (ch === '"') {
-        inQuotes = true;
-      } else if (ch === ',') {
-        result.push(current.trim());
-        current = '';
-      } else {
-        current += ch;
-      }
+      current += ch;
     }
   }
   result.push(current.trim());
@@ -73,7 +71,9 @@ function parseCSV(text: string): Record<string, string>[] {
   return lines.slice(1).map(line => {
     const values = parseCSVLine(line);
     const row: Record<string, string> = {};
-    headers.forEach((h, i) => { row[h] = (values[i] || '').replace(/^"|"$/g, ''); });
+    headers.forEach((h, i) => {
+      row[h] = (values[i] || '').replace(/^"|"$/g, '');
+    });
     return row;
   });
 }
@@ -81,14 +81,15 @@ function parseCSV(text: string): Record<string, string>[] {
 function mapStatus(raw: string): Order['status'] {
   const s = raw.toLowerCase().trim();
   if (!s) return 'Pending';
-  if (s.includes('deliver') || s.includes('ডেলিভ')) return 'Delivered';
-  if (s.includes('cancel') || s.includes('বাতিল')) return 'Cancelled';
-  if (s.includes('confirm') || s.includes('কনফার্ম')) return 'Confirmed';
+  if (s.includes('delivery man') || s.includes('deliveryman') || s.includes('courier')) return 'HandedToDeliveryMan';
+  if (s.includes('complete') || s.includes('completed') || s.includes('deliver')) return 'Completed';
+  if (s.includes('cancel')) return 'Cancelled';
+  if (s.includes('confirm')) return 'Pending';
   return 'Pending';
 }
 
 function normalizeHeader(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9\u0980-\u09ff]/g, '');
+  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
 }
 
 function getLookup(row: Record<string, string>): Map<string, string> {
@@ -113,14 +114,30 @@ function parseNumber(value: string): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function slug(value: string): string {
+  return (value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 40);
+}
+
+function buildFallbackOrderId(i: number, date: string, phone: string, customerName: string, productName: string): string {
+  const parts = [slug(date), slug(phone), slug(customerName), slug(productName)].filter(Boolean);
+  if (!parts.length) return `gsheet-${i}`;
+  return `gs-${parts.join('-')}`;
+}
+
 export async function fetchGoogleSheetOrders(): Promise<Order[]> {
   const sheetId = getOrdersSheetId();
   const gid = getOrdersSheetGid();
   const url = gid
     ? `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`
     : `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
+
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Google Sheet fetch failed: ${res.status}`);
+
   const text = await res.text();
   const rows = parseCSV(text);
 
@@ -129,28 +146,38 @@ export async function fetchGoogleSheetOrders(): Promise<Order[]> {
       const lookup = getLookup(r);
 
       const orderId = pick(lookup, ['Order ID', 'OrderID', 'ID', 'Order No']);
-      const rawCustomerName = pick(lookup, ['Customer Name', 'Name', 'কাস্টমার নাম', 'নাম']);
-      const rawCustomerPhone = pick(lookup, ['Phone', 'Mobile', 'মোবাইল নাম্বার', 'মোবাইল', 'Contact Number']);
-      const district = pick(lookup, ['District', 'জেলা']);
-      const thanaArea = pick(lookup, ['Thana + Area', 'Thana/Area', 'থানা + এলাকা', 'থানা']);
-      const rawAddress = pick(lookup, ['Address', 'ঠিকানা']);
+      const rawCustomerName = pick(lookup, [
+        'Customer Name',
+        'Castomer Name',
+        'Casstomer Name',
+        'Name',
+      ]);
+      const rawCustomerPhone = pick(lookup, [
+        'Customer Number',
+        'Castomer Number',
+        'Casstomer Number',
+        'Phone',
+        'Mobile',
+        'Contact Number',
+      ]);
+      const district = pick(lookup, ['District']);
+      const thanaArea = pick(lookup, ['Thana + Area', 'Thana/Area', 'Thana Area']);
+      const rawAddress = pick(lookup, ['Customer Address', 'Castomer Address', 'Casstomer Address', 'Address']);
       const address = rawAddress || [thanaArea, district].filter(Boolean).join(', ');
 
-      const rawProductName = pick(lookup, ['Product Name', 'Product', 'পণ্যের নাম', 'চুলার নাম']);
+      const rawProductName = pick(lookup, ['Product Name', 'Products Name', 'Product']);
       if (!rawCustomerName && !rawCustomerPhone && !rawProductName) return null;
 
       const customerName = rawCustomerName || 'Unknown';
       const customerPhone = rawCustomerPhone;
       const productName = rawProductName || 'Unknown Product';
-      const quantity = parseNumber(pick(lookup, ['Quantity', 'Qty', 'পরিমাণ'])) || 1;
-      const unitPrice = parseNumber(pick(lookup, ['Unit Price', 'Price', 'দাম']));
-      const deliveryFee = parseNumber(pick(lookup, ['Delivery Fee', 'Delivery', 'ডেলিভারি চার্জ']));
-      const amountFromSheet = parseNumber(
-        pick(lookup, ['Total Amount', 'Amount', 'Total', 'মোট', 'মোট টাকা']),
-      );
+      const quantity = parseNumber(pick(lookup, ['Quantity', 'Qty'])) || 1;
+      const unitPrice = parseNumber(pick(lookup, ['Unit Price', 'Price']));
+      const deliveryFee = parseNumber(pick(lookup, ['Delivery Fee', 'Delivery']));
+      const amountFromSheet = parseNumber(pick(lookup, ['Total Amount', 'Amount', 'Total']));
       const totalAmount = amountFromSheet || unitPrice * quantity + deliveryFee;
 
-      const rawDate = pick(lookup, ['Order DateTime', 'Order Date', 'Timestamp', 'Date', 'তারিখ']);
+      const rawDate = pick(lookup, ['Order DateTime', 'Order Date', 'Timestamp', 'Date']);
       const parsedDate = rawDate ? new Date(rawDate) : null;
       const date =
         parsedDate && !Number.isNaN(parsedDate.getTime())
@@ -158,22 +185,24 @@ export async function fetchGoogleSheetOrders(): Promise<Order[]> {
           : rawDate;
 
       return {
-        id: orderId || `gsheet-${i}`,
+        id: orderId || buildFallbackOrderId(i, rawDate, rawCustomerPhone, rawCustomerName, rawProductName),
         date: date || '',
         customerName,
         customerPhone,
         address,
-        items: [{
-          name: productName,
-          quantity,
-          unitPrice,
-        }],
+        items: [
+          {
+            name: productName,
+            quantity,
+            unitPrice,
+          },
+        ],
         amount: totalAmount,
         deliveryFee: deliveryFee || undefined,
-        status: mapStatus(pick(lookup, ['Order Status', 'Status', 'স্ট্যাটাস'])),
+        status: mapStatus(pick(lookup, ['Order Status', 'Status'])),
         productLink: pick(lookup, ['Product Link', 'Link']) || undefined,
-        sku: pick(lookup, ['SKU', 'Product SKU', 'Code', 'কোড']) || '',
-        productSize: pick(lookup, ['Product size', 'Size', 'সাইজ']) || '',
+        sku: pick(lookup, ['SKU', 'Product SKU', 'Code']) || '',
+        productSize: pick(lookup, ['Product Size', 'Size']) || '',
       } as Order;
     })
     .filter((order): order is Order => order !== null);
