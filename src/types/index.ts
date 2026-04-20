@@ -38,6 +38,8 @@ export interface Conversation {
 export interface Message {
   id: string;
   conversationId: string;
+  facebookId?: string;
+  contactName?: string;
   content: string;
   sender: 'user' | 'contact' | 'ai';
   timestamp: string;

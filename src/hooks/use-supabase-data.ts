@@ -32,33 +32,55 @@ export function useConversations() {
   });
 }
 
+function mapMessageRow(row: any): Message {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    facebookId: row.facebook_id || undefined,
+    contactName: row.contact_name || undefined,
+    content: row.content || '',
+    sender: row.sender as 'user' | 'contact' | 'ai',
+    timestamp: row.created_at,
+    attachmentUrl: row.attachment_url,
+    attachmentType: row.attachment_type,
+    isCarousel: row.is_carousel || false,
+    isFromBot: row.is_from_bot || false,
+    templateElements: row.template_elements || null,
+    messageType: row.message_type || 'text',
+  };
+}
+
 // ---- Messages ----
-export function useMessages(conversationId: string | null) {
+export function useMessages(conversation: Conversation | null | undefined) {
+  const conversationId = conversation?.id ?? null;
+  const facebookId = conversation?.facebookId?.trim() || null;
+
   return useQuery({
-    queryKey: ['messages', conversationId],
+    queryKey: ['messages', conversationId, facebookId],
     enabled: !!conversationId,
     refetchInterval: 5000,
     refetchOnWindowFocus: true,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from('messages')
-        .select('*')
-        .eq('conversation_id', conversationId!)
-        .order('created_at', { ascending: true });
+        .select('*');
+
+      query = facebookId
+        ? query.or(`conversation_id.eq.${conversationId},facebook_id.eq.${facebookId}`)
+        : query.eq('conversation_id', conversationId!);
+
+      const { data, error } = await query
+        .order('created_at', { ascending: true })
+        .limit(1000);
+
       if (error) throw error;
-      return (data || []).map(row => ({
-        id: row.id,
-        conversationId: row.conversation_id,
-        content: row.content || '',
-        sender: row.sender as 'user' | 'contact' | 'ai',
-        timestamp: row.created_at,
-        attachmentUrl: row.attachment_url,
-        attachmentType: row.attachment_type,
-        isCarousel: (row as any).is_carousel || false,
-        isFromBot: (row as any).is_from_bot || false,
-        templateElements: (row as any).template_elements || null,
-        messageType: (row as any).message_type || 'text',
-      })) as Message[];
+
+      const byId = new Map<string, Message>();
+      (data || []).forEach(row => byId.set(row.id, mapMessageRow(row)));
+
+      return Array.from(byId.values()).sort(
+        (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      );
     },
   });
 }

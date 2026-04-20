@@ -36,7 +36,11 @@ const InboxPage = () => {
   const isMobile = useIsMobile();
 
   const { data: conversations = [], isLoading: loadingConvos } = useConversations();
-  const { data: chatMessages = [], isLoading: loadingMsgs } = useMessages(selectedId);
+  const selected = useMemo(
+    () => conversations.find(c => c.id === selectedId) ?? null,
+    [conversations, selectedId]
+  );
+  const { data: chatMessages = [], isLoading: loadingMsgs } = useMessages(selected);
   const sendMessage = useSendMessage();
   const toggleAI = useToggleAI();
   const deleteMessage = useDeleteMessage();
@@ -76,7 +80,6 @@ const InboxPage = () => {
     !search || c.contactName.toLowerCase().includes(search.toLowerCase()) || c.lastMessage.toLowerCase().includes(search.toLowerCase())
   ), [conversations, tab, search]);
 
-  const selected = conversations.find(c => c.id === selectedId);
   const displayMessages: Message[] = mergeConversationPreviewMessage(selected, chatMessages);
 
   useEffect(() => {

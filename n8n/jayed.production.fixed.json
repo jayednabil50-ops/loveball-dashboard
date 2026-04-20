@@ -1417,6 +1417,47 @@
                   },
                   {
                       "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://knfixatinuivgirybnew.supabase.co/rest/v1/messages",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "apikey",
+                                                                                         "value":  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtuZml4YXRpbnVpdmdpcnlibmV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNTI4MDQsImV4cCI6MjA5MTkyODgwNH0.1Qxbu6naNMaD6uxYzGFmUM2eGm4dnGQ3FNbTEhxNsiU"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "Bearer eyJhbGciOiJIUzI1NiIsInJlZiI6ImtuZml4YXRpbnVpdmdpcnlibmV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNTI4MDQsImV4cCI6MjA5MTkyODgwNH0.1Qxbu6naNMaD6uxYzGFmUM2eGm4dnGQ3FNbTEhxNsiU"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Prefer",
+                                                                                         "value":  "return=representation"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={\n  \"conversation_id\": \"{{ $json.id }}\",\n  \"content\": \"{{ JSON.stringify($('Webhook1').item.json.body.entry[0].messaging[0].message.text || '').slice(1, -1) }}\",\n  \"sender\": \"contact\",\n  \"facebook_id\": \"{{ $('Webhook1').item.json.body.entry[0].messaging[0].sender.id }}\",\n  \"contact_name\": \"{{ $('Facebook profile customer').item.json.data[0].participants.data[0].name }}\"\n}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.4,
+                      "position":  [
+                                       1376,
+                                       -560
+                                   ],
+                      "id":  "3b77d5d3-f90b-47ff-b0af-4ccf9c1bb7a9",
+                      "name":  "Insert Contact Text Message"
+                  },
+                  {
+                      "parameters":  {
                                          "options":  {
 
                                                      }
@@ -2069,6 +2110,47 @@
                   },
                   {
                       "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://knfixatinuivgirybnew.supabase.co/rest/v1/messages",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "apikey",
+                                                                                         "value":  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtuZml4YXRpbnVpdmdpcnlibmV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNTI4MDQsImV4cCI6MjA5MTkyODgwNH0.1Qxbu6naNMaD6uxYzGFmUM2eGm4dnGQ3FNbTEhxNsiU"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Authorization",
+                                                                                         "value":  "Bearer eyJhbGciOiJIUzI1NiIsInJlZiI6ImtuZml4YXRpbnVpdmdpcnlibmV3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYzNTI4MDQsImV4cCI6MjA5MTkyODgwNH0.1Qxbu6naNMaD6uxYzGFmUM2eGm4dnGQ3FNbTEhxNsiU"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Content-Type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Prefer",
+                                                                                         "value":  "return=representation"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "specifyBody":  "json",
+                                         "jsonBody":  "={\n  \"conversation_id\": \"{{ $json.id }}\",\n  \"content\": \"{{ JSON.stringify($('Preprocess Input1').item.json.inputValue || '').slice(1, -1) }}\",\n  \"sender\": \"contact\",\n  \"facebook_id\": \"{{ $json.facebook_id }}\",\n  \"contact_name\": \"{{ $json.contact_name }}\",\n  \"message_type\": \"{{ String($('Preprocess Input1').item.json.inputType || 'text').toLowerCase() }}\"\n}",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.4,
+                      "position":  [
+                                       1376,
+                                       -752
+                                   ],
+                      "id":  "54259691-6674-4c38-8f93-bbf7d659e650",
+                      "name":  "Insert Contact Input Message"
+                  },
+                  {
+                      "parameters":  {
                                          "mode":  "retrieve-as-tool",
                                          "toolDescription":  "Search DOCUMENTATION and business policies. Use for: privacy policy, return policy, delivery, payment, business info, FAQ.",
                                          "tableName":  {
@@ -2630,13 +2712,24 @@
                                                      "main":  [
                                                                   [
                                                                       {
-                                                                          "node":  "If9",
+                                                                          "node":  "Insert Contact Text Message",
                                                                           "type":  "main",
                                                                           "index":  0
                                                                       }
-                                                                  ]
-                                                              ]
-                                                 },
+                                                                   ]
+                                                               ]
+                                                  },
+                        "Insert Contact Text Message":  {
+                                                            "main":  [
+                                                                         [
+                                                                             {
+                                                                                 "node":  "If9",
+                                                                                 "type":  "main",
+                                                                                 "index":  0
+                                                                             }
+                                                                         ]
+                                                                     ]
+                                                        },
                         "prompt":  {
                                        "main":  [
                                                     [
@@ -2855,13 +2948,24 @@
                                                     "main":  [
                                                                  [
                                                                      {
-                                                                         "node":  "prompt2",
+                                                                         "node":  "Insert Contact Input Message",
                                                                          "type":  "main",
                                                                          "index":  0
                                                                      }
                                                                  ]
                                                              ]
                                                 },
+                        "Insert Contact Input Message":  {
+                                                             "main":  [
+                                                                          [
+                                                                              {
+                                                                                  "node":  "prompt2",
+                                                                                  "type":  "main",
+                                                                                  "index":  0
+                                                                              }
+                                                                          ]
+                                                                      ]
+                                                         },
                         "prompt2":  {
                                         "main":  [
                                                      [
