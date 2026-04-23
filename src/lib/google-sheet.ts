@@ -1,8 +1,10 @@
-import type { Order } from '@/types';
+﻿import type { Order } from '@/types';
 
 const DEFAULT_ORDERS_SHEET_URL =
   'https://docs.google.com/spreadsheets/d/1WmLK-CJzWtcry3gd8fLXKOqbnh8M4Vb7uBWRXHLiJhM/edit?usp=sharing';
 const SHEET_ID_REGEX = /\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/;
+
+type ParsedCsvRow = Record<string, string> & { __cells?: string[] };
 
 function extractSheetId(input?: string): string | null {
   if (!input) return null;
@@ -40,6 +42,7 @@ function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
+
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     if (inQuotes) {
@@ -60,26 +63,29 @@ function parseCSVLine(line: string): string[] {
       current += ch;
     }
   }
+
   result.push(current.trim());
   return result;
 }
 
-function parseCSV(text: string): Record<string, string>[] {
+function parseCSV(text: string): ParsedCsvRow[] {
   const lines = text.split('\n').filter(l => l.trim());
   if (lines.length < 2) return [];
+
   const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, ''));
+
   return lines.slice(1).map(line => {
-    const values = parseCSVLine(line);
-    const row: Record<string, string> = {};
+    const values = parseCSVLine(line).map(v => (v || '').replace(/^"|"$/g, ''));
+    const row: ParsedCsvRow = { __cells: values };
     headers.forEach((h, i) => {
-      row[h] = (values[i] || '').replace(/^"|"$/g, '');
+      row[h] = values[i] || '';
     });
     return row;
   });
 }
 
 function mapStatus(raw: string): Order['status'] {
-  const s = raw.toLowerCase().trim();
+  const s = (raw || '').toLowerCase().trim();
   if (!s) return 'Pending';
   if (
     s.includes('handover') ||
@@ -96,12 +102,16 @@ function mapStatus(raw: string): Order['status'] {
 }
 
 function normalizeHeader(value: string): string {
-  return value.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return (value || '')
+    .toLowerCase()
+    .normalize('NFKC')
+    .replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
-function getLookup(row: Record<string, string>): Map<string, string> {
+function getLookup(row: ParsedCsvRow): Map<string, string> {
   const lookup = new Map<string, string>();
   for (const [k, v] of Object.entries(row)) {
+    if (k.startsWith('__')) continue;
     lookup.set(normalizeHeader(k), (v || '').trim());
   }
   return lookup;
@@ -113,6 +123,28 @@ function pick(lookup: Map<string, string>, aliases: string[]): string {
     if (value) return value;
   }
   return '';
+}
+
+function joinUniqueParts(parts: Array<string | undefined | null>): string {
+  const normalized = parts
+    .map(part => (part || '').trim())
+    .filter(Boolean)
+    .filter((part, idx, arr) => arr.findIndex(v => v.toLowerCase() === part.toLowerCase()) === idx);
+  return normalized.join(', ');
+}
+
+function pickCell(cells: string[], index: number): string {
+  return (cells[index] || '').trim();
+}
+
+function looksLikeUsefulText(value: string): boolean {
+  const s = (value || '').trim();
+  if (!s) return false;
+  if (s === '-' || s.toLowerCase() === 'x' || s.toLowerCase() === 'na' || s.toLowerCase() === 'n/a') return false;
+  if (/^\d+$/.test(s)) return false;
+  if (/^[\d\s,._-]+$/.test(s)) return false;
+  if (/[\u09F3]|taka|tk/i.test(s)) return false;
+  return true;
 }
 
 function parseNumber(value: string): number {
@@ -151,33 +183,31 @@ export async function fetchGoogleSheetOrders(): Promise<Order[]> {
   return rows
     .map((r, i) => {
       const lookup = getLookup(r);
+      const cells = (r.__cells || []).map(v => (v || '').trim());
+
+      const fallbackName = pickCell(cells, 0);
+      const fallbackPhone = pickCell(cells, 1);
+      const fallbackAddress = joinUniqueParts([pickCell(cells, 2), pickCell(cells, 4), pickCell(cells, 3)]);
+      const fallbackProduct =
+        [pickCell(cells, 5), pickCell(cells, 6), pickCell(cells, 4), pickCell(cells, 3)].find(looksLikeUsefulText) || '';
 
       const orderId = pick(lookup, ['Order ID', 'OrderID', 'ID', 'Order No']);
-      const rawCustomerName = pick(lookup, [
-        'Customer Name',
-        'Castomer Name',
-        'Casstomer Name',
-        'Name',
-      ]);
-      const rawCustomerPhone = pick(lookup, [
-        'Customer Number',
-        'Castomer Number',
-        'Casstomer Number',
-        'Phone',
-        'Mobile',
-        'Contact Number',
-      ]);
+      const rawCustomerName = pick(lookup, ['Customer Name', 'Castomer Name', 'Casstomer Name', 'Name', 'name']);
+      const rawCustomerPhone = pick(lookup, ['Customer Number', 'Castomer Number', 'Casstomer Number', 'Phone', 'Mobile', 'Contact Number']);
       const district = pick(lookup, ['District']);
       const thanaArea = pick(lookup, ['Thana + Area', 'Thana/Area', 'Thana Area']);
       const rawAddress = pick(lookup, ['Customer Address', 'Castomer Address', 'Casstomer Address', 'Address']);
-      const address = rawAddress || [thanaArea, district].filter(Boolean).join(', ');
+      const address = joinUniqueParts([rawAddress, thanaArea, district, fallbackAddress]);
 
       const rawProductName = pick(lookup, ['Product Name', 'Products Name', 'Product']);
-      if (!rawCustomerName && !rawCustomerPhone && !rawProductName) return null;
 
-      const customerName = rawCustomerName || 'Unknown';
-      const customerPhone = rawCustomerPhone;
-      const productName = rawProductName || 'Unknown Product';
+      if (!(rawCustomerName || fallbackName) && !(rawCustomerPhone || fallbackPhone) && !(rawProductName || fallbackProduct)) {
+        return null;
+      }
+
+      const customerName = rawCustomerName || fallbackName || 'Unknown';
+      const customerPhone = rawCustomerPhone || fallbackPhone;
+      const productName = rawProductName || fallbackProduct || 'Unknown Product';
       const quantity = parseNumber(pick(lookup, ['Quantity', 'Qty'])) || 1;
       const unitPrice = parseNumber(pick(lookup, ['Unit Price', 'Price']));
       const deliveryFee = parseNumber(pick(lookup, ['Delivery Fee', 'Delivery']));
@@ -192,7 +222,7 @@ export async function fetchGoogleSheetOrders(): Promise<Order[]> {
           : rawDate;
 
       return {
-        id: orderId || buildFallbackOrderId(i, rawDate, rawCustomerPhone, rawCustomerName, rawProductName),
+        id: orderId || buildFallbackOrderId(i, rawDate, customerPhone, customerName, productName),
         date: date || '',
         customerName,
         customerPhone,
