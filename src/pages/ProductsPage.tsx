@@ -25,6 +25,7 @@ interface Product {
   id: string;
   category: string | null;
   name: string;
+  sku: string | null;
   price: number | null;
   capacity: string | null;
   burner_size: string | null;
@@ -55,12 +56,13 @@ function EmbedBadge({ status, error }: { status?: EmbedStatus; error?: string | 
 type ProductForm = Omit<Product, 'id' | 'price'> & { price: string };
 
 const emptyForm: ProductForm = {
-  category: '', name: '', price: '', capacity: '', burner_size: '',
+  category: '', name: '', sku: '', price: '', capacity: '', burner_size: '',
   height: '', includes: '', material: '', fan_type: '', image_url: '', video_url: '',
 };
 
 const fields: { key: keyof ProductForm; label: string; type?: string; full?: boolean }[] = [
   { key: 'name', label: 'Name' },
+  { key: 'sku', label: 'SKU / Code' },
   { key: 'category', label: 'Category' },
   { key: 'price', label: 'Price', type: 'number' },
   { key: 'capacity', label: 'Capacity' },
@@ -184,6 +186,10 @@ const ProductsPage = () => {
         const rows: Partial<Product>[] = results.data
           .map((r) => {
             const row: any = {};
+            const skuValue = r.sku ?? r.code ?? r.product_code ?? r.product_sku ?? r.sq;
+            if (skuValue != null && skuValue !== '') {
+              row.sku = String(skuValue).trim();
+            }
             allowed.forEach((k) => {
               const v = r[k];
               if (v == null || v === '') return;
@@ -215,7 +221,7 @@ const ProductsPage = () => {
   const openEdit = (p: Product) => {
     setEditing(p);
     setForm({
-      category: p.category ?? '', name: p.name ?? '',
+      category: p.category ?? '', name: p.name ?? '', sku: p.sku ?? '',
       price: p.price != null ? String(p.price) : '',
       capacity: p.capacity ?? '', burner_size: p.burner_size ?? '',
       height: p.height ?? '', includes: p.includes ?? '',
@@ -240,6 +246,7 @@ const ProductsPage = () => {
     const values: Partial<Product> = {
       category: form.category || null,
       name: form.name.trim(),
+      sku: form.sku || null,
       price: form.price ? Number(form.price) : null,
       capacity: form.capacity || null,
       burner_size: form.burner_size || null,
@@ -258,6 +265,7 @@ const ProductsPage = () => {
     const s = search.toLowerCase();
     return (
       p.name?.toLowerCase().includes(s) ||
+      p.sku?.toLowerCase().includes(s) ||
       p.category?.toLowerCase().includes(s) ||
       p.material?.toLowerCase().includes(s)
     );
@@ -343,6 +351,7 @@ const ProductsPage = () => {
               <TableHead>AI</TableHead>
               <TableHead>Category</TableHead>
               <TableHead>Name</TableHead>
+              <TableHead>SKU / Code</TableHead>
               <TableHead>Price</TableHead>
               <TableHead>Capacity</TableHead>
               <TableHead>Burner Size</TableHead>
@@ -357,18 +366,18 @@ const ProductsPage = () => {
           </TableHeader>
           <TableBody>
             {isLoading ? Array.from({ length: 4 }).map((_, i) => (
-              <TableRow key={i}>{Array.from({ length: 14 }).map((_, j) => (
+              <TableRow key={i}>{Array.from({ length: 15 }).map((_, j) => (
                 <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
               ))}</TableRow>
             )) : isError ? (
               <TableRow>
-                <TableCell colSpan={14} className="text-center py-8 text-destructive">
+                <TableCell colSpan={15} className="text-center py-8 text-destructive">
                   ⚠️ {(error as Error)?.message || 'Failed to load products'}
                 </TableCell>
               </TableRow>
             ) : filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={14} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={15} className="text-center py-12 text-muted-foreground">
                   <Package className="h-10 w-10 mx-auto mb-2 opacity-50" />
                   {search ? 'No products match your search' : 'No products yet. Click "New Product" to add one.'}
                 </TableCell>
@@ -387,6 +396,7 @@ const ProductsPage = () => {
                 <TableCell><EmbedBadge status={p.embed_status} error={p.embed_error} /></TableCell>
                 <TableCell className="text-sm">{p.category || '-'}</TableCell>
                 <TableCell className="text-sm font-medium">{p.name}</TableCell>
+                <TableCell className="text-sm">{p.sku || '-'}</TableCell>
                 <TableCell className="text-sm font-medium">{p.price != null ? `৳${Number(p.price).toLocaleString()}` : '-'}</TableCell>
                 <TableCell className="text-sm">{p.capacity || '-'}</TableCell>
                 <TableCell className="text-sm">{p.burner_size || '-'}</TableCell>

@@ -31,6 +31,7 @@ async function sha256Hex(input: string): Promise<string> {
 function buildProductText(p: any): string {
   const parts = [
     p.name && `Name: ${p.name}`,
+    p.sku && `SKU: ${p.sku}`,
     p.category && `Category: ${p.category}`,
     p.price != null && `Price: ${p.price}`,
     p.capacity && `Capacity: ${p.capacity}`,
