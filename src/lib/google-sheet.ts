@@ -81,9 +81,16 @@ function parseCSV(text: string): Record<string, string>[] {
 function mapStatus(raw: string): Order['status'] {
   const s = raw.toLowerCase().trim();
   if (!s) return 'Pending';
-  if (s.includes('delivery man') || s.includes('deliveryman') || s.includes('courier')) return 'HandedToDeliveryMan';
-  if (s.includes('complete') || s.includes('completed') || s.includes('deliver')) return 'Completed';
-  if (s.includes('cancel')) return 'Cancelled';
+  if (
+    s.includes('handover') ||
+    s.includes('hand over') ||
+    s.includes('delivery man') ||
+    s.includes('deliveryman') ||
+    s.includes('courier')
+  ) return 'Handover';
+  if (s.includes('deliver')) return 'Delivery';
+  if (s.includes('complete') || s.includes('completed')) return 'Complete';
+  if (s.includes('cancel')) return 'Pending';
   if (s.includes('confirm')) return 'Pending';
   return 'Pending';
 }

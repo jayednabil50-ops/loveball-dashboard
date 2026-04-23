@@ -14,24 +14,27 @@ import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import type { Order } from '@/types';
 
-type ManagedOrderStatus = 'Pending' | 'Completed' | 'HandedToDeliveryMan';
+type ManagedOrderStatus = 'Pending' | 'Complete' | 'Delivery' | 'Handover';
 
 const MANAGED_STATUS_OPTIONS: Array<{ value: ManagedOrderStatus; label: string }> = [
   { value: 'Pending', label: 'Pending' },
-  { value: 'Completed', label: 'Completed' },
-  { value: 'HandedToDeliveryMan', label: 'Handed To Delivery Man' },
+  { value: 'Complete', label: 'Complete' },
+  { value: 'Delivery', label: 'Delivery' },
+  { value: 'Handover', label: 'Handover' },
 ];
 
 function normalizeManagedStatus(status: Order['status']): ManagedOrderStatus {
-  if (status === 'Completed' || status === 'Delivered') return 'Completed';
-  if (status === 'HandedToDeliveryMan') return 'HandedToDeliveryMan';
+  if (status === 'Complete' || status === 'Completed') return 'Complete';
+  if (status === 'Delivery' || status === 'Delivered') return 'Delivery';
+  if (status === 'Handover' || status === 'HandedToDeliveryMan') return 'Handover';
   return 'Pending';
 }
 
 const statusColors: Record<ManagedOrderStatus, string> = {
   Pending: 'bg-status-pending/10 text-status-pending border-status-pending/30',
-  Completed: 'bg-status-delivered/10 text-status-delivered border-status-delivered/30',
-  HandedToDeliveryMan: 'bg-status-confirmed/10 text-status-confirmed border-status-confirmed/30',
+  Complete: 'bg-status-delivered/10 text-status-delivered border-status-delivered/30',
+  Delivery: 'bg-status-confirmed/10 text-status-confirmed border-status-confirmed/30',
+  Handover: 'bg-kpi-purple-bg text-kpi-purple border-kpi-purple/40',
 };
 
 const OrdersPage = () => {
@@ -68,8 +71,8 @@ const OrdersPage = () => {
 
   const totalRevenue = normalizedOrders.reduce((sum, order) => sum + order.amount, 0);
   const pending = normalizedOrders.filter(order => order.status === 'Pending').length;
-  const completed = normalizedOrders.filter(order => order.status === 'Completed').length;
-  const handedToDelivery = normalizedOrders.filter(order => order.status === 'HandedToDeliveryMan').length;
+  const delivery = normalizedOrders.filter(order => order.status === 'Delivery').length;
+  const handover = normalizedOrders.filter(order => order.status === 'Handover').length;
 
   const colorMap: Record<string, { bg: string; text: string }> = {
     'kpi-blue': { bg: 'bg-kpi-blue-bg', text: 'text-kpi-blue' },
@@ -82,7 +85,7 @@ const OrdersPage = () => {
     { label: t('orders.totalOrders'), value: normalizedOrders.length, icon: ShoppingBag, color: 'kpi-blue' },
     { label: t('orders.totalRevenue'), value: `BDT ${totalRevenue.toLocaleString()}`, icon: DollarSign, color: 'kpi-emerald' },
     { label: 'Pending', value: pending, icon: Clock, color: 'kpi-rose' },
-    { label: 'Delivery Man', value: handedToDelivery, icon: Truck, color: 'kpi-purple' },
+    { label: 'Delivery', value: delivery + handover, icon: Truck, color: 'kpi-purple' },
   ];
 
   const printInvoice = (order: Order & { status: ManagedOrderStatus }) => {
@@ -121,9 +124,9 @@ const OrdersPage = () => {
               const headers = [
                 'Order ID',
                 'Date',
-                'Customer Name',
-                'Customer Number',
-                'Customer Address',
+                'Castomer Name',
+                'Casstomer Number',
+                'Casstomer Address',
                 'Product Name',
                 'SKU',
                 'Size',
@@ -216,9 +219,9 @@ const OrdersPage = () => {
             <TableRow>
               <TableHead>{t('orders.orderId')}</TableHead>
               <TableHead>{t('orders.date')}</TableHead>
-              <TableHead>Customer Name</TableHead>
-              <TableHead>Customer Number</TableHead>
-              <TableHead>Customer Address</TableHead>
+              <TableHead>Castomer Name</TableHead>
+              <TableHead>Casstomer Number</TableHead>
+              <TableHead>Casstomer Address</TableHead>
               <TableHead>Product Name</TableHead>
               <TableHead>SKU</TableHead>
               <TableHead>Size</TableHead>
@@ -307,16 +310,16 @@ const OrdersPage = () => {
                 <span className="text-sm">{selectedOrder.date}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Customer Name</span>
+                <span className="text-sm text-muted-foreground">Castomer Name</span>
                 <span className="text-sm">{selectedOrder.customerName}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-sm text-muted-foreground">Customer Number</span>
+                <span className="text-sm text-muted-foreground">Casstomer Number</span>
                 <span className="text-sm">{selectedOrder.customerPhone || '-'}</span>
               </div>
               {selectedOrder.address && (
                 <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Customer Address</span>
+                  <span className="text-sm text-muted-foreground">Casstomer Address</span>
                   <span className="text-sm text-right max-w-[220px]">{selectedOrder.address}</span>
                 </div>
               )}

@@ -351,24 +351,28 @@ export function useSendMessage() {
 }
 
 // ---- Orders ----
-const ORDER_STATUS_OPTIONS = ['Pending', 'Completed', 'HandedToDeliveryMan'] as const;
+const ORDER_STATUS_OPTIONS = ['Pending', 'Complete', 'Delivery', 'Handover'] as const;
 type OrderStatusOverride = typeof ORDER_STATUS_OPTIONS[number];
 
 function normalizeOrderStatus(raw: string | null | undefined): Order['status'] {
   const s = (raw || '').trim().toLowerCase();
   if (!s) return 'Pending';
-  if (s === 'completed' || s === 'complete' || s === 'delivered' || s === 'done') return 'Completed';
+  if (s === 'completed' || s === 'complete' || s === 'done') return 'Complete';
   if (
+    s === 'handover' ||
+    s === 'handedover' ||
+    s === 'handed to delivery man' ||
     s === 'handedtodeliveryman' ||
     s.includes('deliveryman') ||
     s.includes('delivery man') ||
     s.includes('courier')
   ) {
-    return 'HandedToDeliveryMan';
+    return 'Handover';
   }
+  if (s === 'delivery' || s === 'delivered' || s.includes('deliver')) return 'Delivery';
   if (s === 'pending') return 'Pending';
   if (s === 'confirmed') return 'Pending';
-  if (s === 'cancelled' || s === 'canceled') return 'Cancelled';
+  if (s === 'cancelled' || s === 'canceled') return 'Pending';
   return 'Pending';
 }
 
@@ -901,13 +905,13 @@ export function useOrderStatusDistribution() {
     queryKey: ['order_status_dist'],
     queryFn: async () => {
       const orders = await fetchOrdersFromDataSource();
-      const counts: Record<string, number> = { Pending: 0, Completed: 0, HandedToDeliveryMan: 0, Cancelled: 0 };
+      const counts: Record<string, number> = { Pending: 0, Complete: 0, Delivery: 0, Handover: 0 };
       orders.forEach(o => { counts[o.status] = (counts[o.status] || 0) + 1; });
       const colorMap: Record<string, string> = {
         Pending: 'hsl(38, 92%, 50%)',
-        Completed: 'hsl(160, 84%, 32%)',
-        HandedToDeliveryMan: 'hsl(217, 91%, 50%)',
-        Cancelled: 'hsl(0, 84%, 60%)',
+        Complete: 'hsl(160, 84%, 32%)',
+        Delivery: 'hsl(217, 91%, 50%)',
+        Handover: 'hsl(268, 85%, 65%)',
       };
       return Object.entries(counts).map(([name, value]) => ({ name, value, color: colorMap[name] }));
     },
