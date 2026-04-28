@@ -64,6 +64,10 @@ export interface Order {
   productLink?: string;
   sku?: string;
   productSize?: string;
+  dataSource?: 'google_sheet' | 'supabase';
+  sourceRowId?: string;
+  sheetRowNumber?: number;
+  sheetTabId?: number | null;
 }
 
 export interface AnalyticsSummary {

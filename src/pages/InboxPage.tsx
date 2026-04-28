@@ -23,6 +23,29 @@ import CarouselMessage, { parseCarouselData } from '@/components/CarouselMessage
 import { useInboxRealtime } from '@/hooks/use-inbox-realtime';
 import { useIsMobile } from '@/hooks/use-mobile';
 
+const DEFAULT_ATTACHMENT_LABELS = new Set([
+  'Image',
+  'Video',
+  'Voice message',
+  'File',
+  'Carousel',
+  '📷 Image',
+  '🎥 Video',
+  '🎤 Voice message',
+  '📎 File',
+  '🎠 Carousel',
+  'ðŸ“· Image',
+  'ðŸŽ¥ Video',
+  'ðŸŽ¤ Voice message',
+  'ðŸ“Ž File',
+  'ðŸŽ  Carousel',
+]);
+
+function shouldHideAttachmentCaption(content?: string | null) {
+  const value = (content || '').trim();
+  return !value || DEFAULT_ATTACHMENT_LABELS.has(value);
+}
+
 const InboxPage = () => {
   const { t } = useTranslation();
   useInboxRealtime();
@@ -271,7 +294,7 @@ const InboxPage = () => {
                         msg.attachmentType === 'audio' && msg.attachmentUrl ? (
                         <div>
                           <audio controls src={msg.attachmentUrl} className="max-w-full" />
-                          {msg.content && msg.content !== '🎤 Voice message' && (
+                          {!shouldHideAttachmentCaption(msg.content) && (
                             <p className="text-sm mt-1">{msg.content}</p>
                           )}
                         </div>
@@ -284,14 +307,14 @@ const InboxPage = () => {
                             onClick={() => window.open(msg.attachmentUrl, '_blank')}
                             loading="lazy"
                           />
-                          {msg.content && msg.content !== '📷 Image' && (
+                          {!shouldHideAttachmentCaption(msg.content) && (
                             <p className="text-sm mt-1">{msg.content}</p>
                           )}
                         </div>
                       ) : msg.attachmentType === 'video' && msg.attachmentUrl ? (
                         <div>
                           <video controls src={msg.attachmentUrl} className="max-w-full rounded-lg" />
-                          {msg.content && msg.content !== '🎥 Video' && (
+                          {!shouldHideAttachmentCaption(msg.content) && (
                             <p className="text-sm mt-1">{msg.content}</p>
                           )}
                         </div>

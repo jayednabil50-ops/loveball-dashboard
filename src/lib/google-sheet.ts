@@ -170,6 +170,7 @@ function buildFallbackOrderId(i: number, date: string, phone: string, customerNa
 export async function fetchGoogleSheetOrders(): Promise<Order[]> {
   const sheetId = getOrdersSheetId();
   const gid = getOrdersSheetGid();
+  const sheetTabId = gid ? Number(gid) : null;
   const url = gid
     ? `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv&gid=${gid}`
     : `https://docs.google.com/spreadsheets/d/${sheetId}/gviz/tq?tqx=out:csv`;
@@ -240,6 +241,9 @@ export async function fetchGoogleSheetOrders(): Promise<Order[]> {
         productLink: pick(lookup, ['Product Link', 'Link']) || undefined,
         sku: pick(lookup, ['SKU', 'Product SKU', 'Code']) || '',
         productSize: pick(lookup, ['Product Size', 'Size']) || '',
+        dataSource: 'google_sheet',
+        sheetRowNumber: i + 2,
+        sheetTabId,
       } as Order;
     })
     .filter((order): order is Order => order !== null);

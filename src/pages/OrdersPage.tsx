@@ -5,14 +5,19 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ShoppingBag, DollarSign, Clock, Truck, Search, RefreshCw, Download, FileText, X } from 'lucide-react';
-import { useOrders, useUpdateOrderStatus } from '@/hooks/use-supabase-data';
+import { ShoppingBag, DollarSign, Clock, Truck, Search, RefreshCw, Download, FileText, Trash2, X } from 'lucide-react';
+import { useDeleteOrder, useOrders, useUpdateOrderStatus } from '@/hooks/use-supabase-data';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import type { Order } from '@/types';
+import { toast } from 'sonner';
 
 type ManagedOrderStatus = 'Pending' | 'Complete' | 'Delivery' | 'Handover';
 
@@ -42,8 +47,10 @@ const OrdersPage = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | ManagedOrderStatus>('all');
   const [search, setSearch] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [orderToDelete, setOrderToDelete] = useState<Order | null>(null);
   const { data: orders = [], isLoading, isError, error } = useOrders();
   const updateOrderStatus = useUpdateOrderStatus();
+  const deleteOrder = useDeleteOrder();
   const queryClient = useQueryClient();
   const selectedManagedStatus = selectedOrder ? normalizeManagedStatus(selectedOrder.status) : 'Pending';
 
@@ -103,6 +110,24 @@ const OrdersPage = () => {
 
   const onStatusChange = (orderId: string, status: ManagedOrderStatus) => {
     updateOrderStatus.mutate({ orderId, status });
+  };
+
+  const onConfirmDeleteOrder = () => {
+    if (!orderToDelete) return;
+    deleteOrder.mutate(orderToDelete, {
+      onSuccess: (result) => {
+        if (selectedOrder?.id === orderToDelete.id) setSelectedOrder(null);
+        setOrderToDelete(null);
+        if (result.warning) {
+          toast.warning(result.warning);
+        } else {
+          toast.success('Order deleted successfully');
+        }
+      },
+      onError: (mutationError: any) => {
+        toast.error(mutationError?.message || 'Failed to delete order');
+      },
+    });
   };
 
   return (
@@ -218,7 +243,7 @@ const OrdersPage = () => {
               <TableHead>Casstomer Address</TableHead>
               <TableHead>Product Name</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Invoice</TableHead>
+              <TableHead>Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -270,10 +295,21 @@ const OrdersPage = () => {
                       </SelectContent>
                     </Select>
                   </TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="sm" onClick={e => { e.stopPropagation(); printInvoice(order); }}>
-                      <FileText className="h-4 w-4" />
-                    </Button>
+                  <TableCell onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => printInvoice(order)}>
+                        <FileText className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive"
+                        disabled={deleteOrder.isPending}
+                        onClick={() => setOrderToDelete(order)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))
@@ -351,13 +387,43 @@ const OrdersPage = () => {
                   ))}
                 </SelectContent>
               </Select>
-              <Button onClick={() => printInvoice(selectedOrder)} className="w-full">
-                Print Invoice
-              </Button>
+              <div className="flex gap-2">
+                <Button onClick={() => printInvoice(selectedOrder)} className="flex-1">
+                  Print Invoice
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  disabled={deleteOrder.isPending}
+                  onClick={() => setOrderToDelete(selectedOrder)}
+                >
+                  Delete Order
+                </Button>
+              </div>
             </div>
           )}
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!orderToDelete} onOpenChange={(open) => !open && setOrderToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this order?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This order will be removed from the dashboard now. If Google Sheets delete access is configured, the source row will be deleted there too.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onConfirmDeleteOrder}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleteOrder.isPending ? 'Deleting...' : 'Delete'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

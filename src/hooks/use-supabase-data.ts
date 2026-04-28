@@ -354,6 +354,26 @@ export function useSendMessage() {
 const ORDER_STATUS_OPTIONS = ['Pending', 'Complete', 'Delivery', 'Handover'] as const;
 type OrderStatusOverride = typeof ORDER_STATUS_OPTIONS[number];
 
+async function fetchDeletedOrderIds(): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('app_settings')
+    .select('value')
+    .eq('key', 'deleted_order_ids')
+    .maybeSingle();
+
+  if (error) {
+    console.warn('Deleted order list fetch failed from app_settings:', error.message);
+    return new Set<string>();
+  }
+
+  const raw = Array.isArray(data?.value) ? data.value : [];
+  return new Set(
+    raw
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  );
+}
+
 function normalizeOrderStatus(raw: string | null | undefined): Order['status'] {
   const s = (raw || '').trim().toLowerCase();
   if (!s) return 'Pending';
@@ -397,17 +417,22 @@ async function fetchOrderStatusOverrides(): Promise<Map<string, Order['status']>
 }
 
 async function fetchOrdersFromDataSource(): Promise<Order[]> {
-  const overrides = await fetchOrderStatusOverrides();
+  const [overrides, deletedIds] = await Promise.all([
+    fetchOrderStatusOverrides(),
+    fetchDeletedOrderIds(),
+  ]);
 
   // Primary source: Google Sheet (n8n order flow writes here)
   try {
     const { fetchGoogleSheetOrders } = await import('@/lib/google-sheet');
     const sheetOrders = await fetchGoogleSheetOrders();
     if (sheetOrders.length > 0) {
-      return sheetOrders.map(order => ({
-        ...order,
-        status: overrides.get(order.id) || normalizeOrderStatus(order.status),
-      }));
+      return sheetOrders
+        .filter(order => !deletedIds.has(order.id))
+        .map(order => ({
+          ...order,
+          status: overrides.get(order.id) || normalizeOrderStatus(order.status),
+        }));
     }
   } catch (sheetError) {
     console.warn('Google Sheet order fetch failed, falling back to Supabase orders table:', sheetError);
@@ -422,22 +447,26 @@ async function fetchOrdersFromDataSource(): Promise<Order[]> {
 
   if (error) throw error;
 
-  return (data || []).map((row: any) => ({
-    id: row.order_id || row.id,
-    date: row.order_date ? new Date(row.order_date).toLocaleDateString('en-GB') : '',
-    customerName: row.customer_name || 'Unknown',
-    customerPhone: row.customer_phone || '',
-    address: row.address || '',
-    items: Array.isArray(row.items) && row.items.length > 0
-      ? row.items
-      : [{ name: row.product_name || 'Unknown Product', quantity: row.quantity || 1, unitPrice: Number(row.unit_price) || 0 }],
-    amount: Number(row.amount) || 0,
-    deliveryFee: row.delivery_fee != null ? Number(row.delivery_fee) : undefined,
-    status: overrides.get(row.order_id || row.id) || normalizeOrderStatus(row.status),
-    productLink: row.product_link || undefined,
-    sku: row.sku || '',
-    productSize: row.product_size || '',
-  })) as Order[];
+  return (data || [])
+    .map((row: any) => ({
+      id: row.order_id || row.id,
+      date: row.order_date ? new Date(row.order_date).toLocaleDateString('en-GB') : '',
+      customerName: row.customer_name || 'Unknown',
+      customerPhone: row.customer_phone || '',
+      address: row.address || '',
+      items: Array.isArray(row.items) && row.items.length > 0
+        ? row.items
+        : [{ name: row.product_name || 'Unknown Product', quantity: row.quantity || 1, unitPrice: Number(row.unit_price) || 0 }],
+      amount: Number(row.amount) || 0,
+      deliveryFee: row.delivery_fee != null ? Number(row.delivery_fee) : undefined,
+      status: overrides.get(row.order_id || row.id) || normalizeOrderStatus(row.status),
+      productLink: row.product_link || undefined,
+      sku: row.sku || '',
+      productSize: row.product_size || '',
+      dataSource: 'supabase',
+      sourceRowId: row.id,
+    }))
+    .filter((order: Order) => !deletedIds.has(order.id)) as Order[];
 }
 
 export function useOrders() {
@@ -484,6 +513,37 @@ export function useUpdateOrderStatus() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+}
+
+export function useDeleteOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (order: Order) => {
+      const { data, error } = await supabase.functions.invoke('delete-order', {
+        body: {
+          orderId: order.id,
+          dataSource: order.dataSource || 'google_sheet',
+          sourceRowId: order.sourceRowId || null,
+          sheetRowNumber: order.sheetRowNumber || null,
+          sheetTabId: order.sheetTabId ?? null,
+        },
+      });
+
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+      return data as {
+        success: boolean;
+        deletedOrderId: string;
+        dataSource: string;
+        sheetDeleted: boolean;
+        warning?: string;
+      };
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['orders'] });
+      qc.invalidateQueries({ queryKey: ['dashboard_summary'] });
     },
   });
 }
