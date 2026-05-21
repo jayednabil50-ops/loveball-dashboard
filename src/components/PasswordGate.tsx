@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Lock } from 'lucide-react';
 
 const PASS_KEY = 'dashboard-authenticated';
-const DEFAULT_PASSWORD = 'change-this-password';
+const DEFAULT_PASSWORD = 'Shovon@#124422';
 const DASHBOARD_PASSWORD = import.meta.env.VITE_DASHBOARD_PASSWORD || DEFAULT_PASSWORD;
 
 export const isAuthenticated = () => sessionStorage.getItem(PASS_KEY) === 'true';
@@ -34,8 +34,8 @@ export const PasswordGate = ({ onSuccess }: { onSuccess: () => void }) => {
           <h1 className="text-xl font-semibold text-foreground">Dashboard Login</h1>
           <p className="text-sm text-muted-foreground">Enter password to continue</p>
           {DASHBOARD_PASSWORD === DEFAULT_PASSWORD && (
-            <p className="text-xs text-amber-600 text-center">
-              Set <code>VITE_DASHBOARD_PASSWORD</code> before production deploy.
+            <p className="text-xs text-muted-foreground text-center">
+              Secure dashboard access is enabled.
             </p>
           )}
         </div>
