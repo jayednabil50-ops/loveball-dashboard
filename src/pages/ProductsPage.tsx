@@ -56,6 +56,40 @@ type EditableProductField =
   | 'image_url'
   | 'video_url';
 
+type ProductColumnKey =
+  | 'image'
+  | 'ai'
+  | EditableProductField;
+
+interface ColumnSetting {
+  column_key: string;
+  display_name: string;
+}
+
+const PRODUCT_TABLE_NAME = 'products';
+
+const productColumns: { key: ProductColumnKey; label: string; className?: string }[] = [
+  { key: 'image', label: 'Image' },
+  { key: 'ai', label: 'AI' },
+  { key: 'category', label: 'Category' },
+  { key: 'name', label: 'Name' },
+  { key: 'sku', label: 'SKU / Code' },
+  { key: 'price', label: 'Price' },
+  { key: 'capacity', label: 'Capacity' },
+  { key: 'burner_size', label: 'Burner Size' },
+  { key: 'height', label: 'Height' },
+  { key: 'includes', label: 'Includes' },
+  { key: 'material', label: 'Material' },
+  { key: 'fan_type', label: 'Fan Type' },
+  { key: 'image_url', label: 'Image URL' },
+  { key: 'video_url', label: 'Video URL' },
+];
+
+const defaultColumnLabels = productColumns.reduce(
+  (labels, column) => ({ ...labels, [column.key]: column.label }),
+  {} as Record<ProductColumnKey, string>,
+);
+
 const bnDigitMap: Record<string, string> = {
   '০': '0',
   '১': '1',
@@ -78,6 +112,78 @@ const normalizeNumberInput = (value: string) =>
 function displayCellValue(value: string | number | null | undefined, fallback = '-') {
   if (value === null || value === undefined || value === '') return fallback;
   return String(value);
+}
+
+function EditableColumnHeader({
+  label,
+  onSave,
+}: {
+  label: string;
+  onSave: (nextLabel: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(label);
+  const skipCommitRef = useRef(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(label);
+  }, [editing, label]);
+
+  const commit = () => {
+    if (skipCommitRef.current) {
+      skipCommitRef.current = false;
+      return;
+    }
+
+    const next = draft.trim();
+    setEditing(false);
+
+    if (!next) {
+      toast.error('Column name cannot be empty');
+      setDraft(label);
+      return;
+    }
+
+    if (next !== label) {
+      onSave(next);
+    }
+  };
+
+  if (editing) {
+    return (
+      <Input
+        autoFocus
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.currentTarget.blur();
+          }
+          if (e.key === 'Escape') {
+            skipCommitRef.current = true;
+            setDraft(label);
+            setEditing(false);
+          }
+        }}
+        className="h-8 min-w-[96px] text-xs font-medium"
+        aria-label={`Edit ${label} column header`}
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      className="group/header inline-flex min-h-8 max-w-full items-center gap-1 rounded px-1 text-left font-medium transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      title="Edit column name"
+    >
+      <span className="truncate">{label}</span>
+      <Pencil className="h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover/header:opacity-70 group-focus-visible/header:opacity-70" />
+    </button>
+  );
 }
 
 function EditableCell({
@@ -248,6 +354,26 @@ const ProductsPage = () => {
     },
   });
 
+  const { data: columnSettings = [] } = useQuery({
+    queryKey: ['column-settings', PRODUCT_TABLE_NAME],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('column_settings' as any)
+        .select('column_key, display_name')
+        .eq('table_name', PRODUCT_TABLE_NAME);
+      if (error) throw error;
+      return (data || []) as ColumnSetting[];
+    },
+  });
+
+  const columnSettingsByKey = columnSettings.reduce((settings, setting) => {
+    settings[setting.column_key as ProductColumnKey] = setting.display_name;
+    return settings;
+  }, {} as Partial<Record<ProductColumnKey, string>>);
+
+  const getColumnLabel = (key: ProductColumnKey) =>
+    columnSettingsByKey[key] || defaultColumnLabels[key];
+
   const triggerEmbed = async (productId: string) => {
     try {
       await supabase.functions.invoke('embed-product', { body: { product_id: productId } });
@@ -294,6 +420,49 @@ const ProductsPage = () => {
       if (newId) triggerEmbed(newId);
     },
     onError: (e: any) => toast.error(e?.message || 'Failed to save'),
+  });
+
+  const columnSettingMutation = useMutation({
+    mutationFn: async ({ columnKey, displayName }: { columnKey: ProductColumnKey; displayName: string }) => {
+      const { error } = await supabase
+        .from('column_settings' as any)
+        .upsert(
+          {
+            table_name: PRODUCT_TABLE_NAME,
+            column_key: columnKey,
+            display_name: displayName,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'table_name,column_key' },
+        );
+      if (error) throw error;
+    },
+    onMutate: async ({ columnKey, displayName }) => {
+      const queryKey = ['column-settings', PRODUCT_TABLE_NAME] as const;
+      await qc.cancelQueries({ queryKey });
+      const previous = qc.getQueryData<ColumnSetting[]>(queryKey);
+
+      qc.setQueryData<ColumnSetting[]>(queryKey, (current = []) => {
+        const exists = current.some(setting => setting.column_key === columnKey);
+        if (exists) {
+          return current.map(setting =>
+            setting.column_key === columnKey ? { ...setting, display_name: displayName } : setting,
+          );
+        }
+        return [...current, { column_key: columnKey, display_name: displayName }];
+      });
+
+      return { previous, queryKey };
+    },
+    onError: (e: any, _vars, context) => {
+      if (context?.previous) {
+        qc.setQueryData(context.queryKey, context.previous);
+      }
+      toast.error(e?.message || 'Failed to save column name');
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ['column-settings', PRODUCT_TABLE_NAME] });
+    },
   });
 
   const inlineUpdateMutation = useMutation({
@@ -457,6 +626,10 @@ const ProductsPage = () => {
     await inlineUpdateMutation.mutateAsync({ productId, field, rawValue });
   };
 
+  const saveColumnLabel = (columnKey: ProductColumnKey) => (displayName: string) => {
+    columnSettingMutation.mutate({ columnKey, displayName });
+  };
+
   const filtered = products.filter(p => {
     if (!search) return true;
     const s = search.toLowerCase();
@@ -544,20 +717,11 @@ const ProductsPage = () => {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Image</TableHead>
-              <TableHead>AI</TableHead>
-              <TableHead>Category</TableHead>
-              <TableHead>Name</TableHead>
-              <TableHead>SKU / Code</TableHead>
-              <TableHead>Price</TableHead>
-              <TableHead>Capacity</TableHead>
-              <TableHead>Burner Size</TableHead>
-              <TableHead>Height</TableHead>
-              <TableHead>Includes</TableHead>
-              <TableHead>Material</TableHead>
-              <TableHead>Fan Type</TableHead>
-              <TableHead>Image URL</TableHead>
-              <TableHead>Video URL</TableHead>
+              {productColumns.map(column => (
+                <TableHead key={column.key} className={column.className}>
+                  <EditableColumnHeader label={getColumnLabel(column.key)} onSave={saveColumnLabel(column.key)} />
+                </TableHead>
+              ))}
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
